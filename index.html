@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<! STOP LOOKING AT MY SOURCE CODE!!>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>High Combination Encryption Technological Security Software</title>
+</head>
+<body>
+
+<h1>HCETSS</h1>
+<p>High Combination Encryption Technological Security Software</p>
+
+<h2>Encrypt</h2>
+<textarea id="plain" rows="6" cols="60" placeholder="Type text here..."></textarea><br>
+<button id="enc">Encrypt</button>
+<p>result:</p>
+<textarea id="cipher" rows="6" cols="60" readonly></textarea>
+<p>Decryption key:</p>
+<input id="key" size="40" readonly>
+
+<h2>Decrypt</h2>
+<p>Encrypted String:</p>
+<textarea id="cipherIn" rows="6" cols="60"></textarea>
+<p>Key:</p>
+<input id="keyIn" size="40"><br>
+<button id="dec">Decrypt</button>
+<p>Result:</p>
+<textarea id="plainOut" rows="6" cols="60" readonly></textarea>
+<p id="msg"></p>
+
+<script>
+    
+const ALPHA = Array.from({length: 95}, (_, i) => String.fromCharCode(32 + i)).concat("\n");
+const N = ALPHA.length;
+const IDX = new Map(ALPHA.map((c, i) => [c, i]));
+const NUM_ROTORS = 4;
+const PLUG_PAIRS = 12;
+
+function makeRng(hex) {
+  let a = parseInt(hex.slice(0, 8), 16), b = parseInt(hex.slice(8, 16), 16),
+      c = parseInt(hex.slice(16, 24), 16), d = parseInt(hex.slice(24, 32), 16);
+  const next = () => {
+    a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0;
+    let t = (a + b) | 0;
+    a = b ^ (b >>> 9);
+    b = (c + (c << 3)) | 0;
+    c = (c << 21) | (c >>> 11);
+    d = (d + 1) | 0;
+    t = (t + d) | 0;
+    c = (c + t) | 0;
+    return (t >>> 0) / 4294967296;
+  };
+  for (let i = 0; i < 20; i++) next(); // warm-up
+  return next;
+}
+
+function shuffle(arr, rnd) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+const range = () => Array.from({length: N}, (_, i) => i);
+
+function buildMachine(key) {
+  const rnd = makeRng(key);
+  const rotors = [];
+  for (let i = 0; i < NUM_ROTORS; i++) {
+    const w = shuffle(range(), rnd);
+    const inv = [];
+    w.forEach((v, j) => inv[v] = j);
+    rotors.push({ w, inv, notch: Math.floor(rnd() * N), pos: Math.floor(rnd() * N) });
+  }
+  const refl = new Array(N);
+  const p = shuffle(range(), rnd);
+  for (let i = 0; i < N; i += 2) { refl[p[i]] = p[i + 1]; refl[p[i + 1]] = p[i]; }
+  const plug = range();
+  const q = shuffle(range(), rnd);
+  for (let i = 0; i < PLUG_PAIRS; i++) {
+    plug[q[2 * i]] = q[2 * i + 1];
+    plug[q[2 * i + 1]] = q[2 * i];
+  }
+  return { rotors, refl, plug };
+}
+
+function stepRotors(rotors) {
+  const at = rotors.map(r => r.pos === r.notch);
+  const last = rotors.length - 1;
+  for (let i = 0; i <= last; i++) {
+    const turn = i === 0 || at[i - 1] || (i < last && at[i]);
+    if (turn) rotors[i].pos = (rotors[i].pos + 1) % N;
+  }
+}
+
+function run(text, key) {
+  const m = buildMachine(key);
+  let out = "";
+  for (const ch of text.replace(/\r/g, "")) {
+    if (!IDX.has(ch)) { out += ch; continue; } 
+    stepRotors(m.rotors);
+    let c = m.plug[IDX.get(ch)];
+    for (let i = 0; i < NUM_ROTORS; i++) {
+      const r = m.rotors[i];
+      c = (r.w[(c + r.pos) % N] - r.pos + N) % N;
+    }
+    c = m.refl[c];
+    for (let i = NUM_ROTORS - 1; i >= 0; i--) {
+      const r = m.rotors[i];
+      c = (r.inv[(c + r.pos) % N] - r.pos + N) % N;
+    }
+    out += ALPHA[m.plug[c]];
+  }
+  return out;
+}
+
+function newKey() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+const $ = id => document.getElementById(id);
+
+$("enc").onclick = () => {
+  const key = newKey();
+  $("key").value = key;
+  $("cipher").value = run($("plain").value, key);
+  $("msg").textContent = "";
+};
+
+$("dec").onclick = () => {
+  const key = $("keyIn").value.trim().toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(key)) {
+    $("msg").textContent = "Key must be 32 hex characters.";
+    return;
+  }
+  $("plainOut").value = run($("cipherIn").value, key);
+  $("msg").textContent = "";
+};
+</script>
+
+</body>
+</html>
